@@ -10,7 +10,7 @@ Features:
 - Fast
 
 ### Build Status:
-[![Android CI](https://github.com/sounddrill31/GPSPic/actions/workflows/main.yml/badge.svg)](https://github.com/sounddrill31/GPSPic/actions/workflows/main.yml)
+[![Android CI](https://github.com/ZeusInstitute-OSS/GPSPic/actions/workflows/main.yml/badge.svg)](https://github.com/ZeusInstitute-OSS/GPSPic/actions/workflows/main.yml)
 
 # Roadmap:
 ✅ Done
