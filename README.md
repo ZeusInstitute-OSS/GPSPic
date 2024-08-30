@@ -4,14 +4,10 @@ Open Source GPS Camera
 Mark the location of activities by embedding data onto the image. Ensure things were done where they were done and when they were done!
 
 Features:
-- Custom UPI ID
-- Static QR on Main Screen
-- Dynamic QR with custom amount
-- Split the Bill mode for multiple payees
-- Quick Updater
-- SMS based bill tracker
-- Announce transaction amount sent/recieved through Voice when enabled
-- Open Source
+- Simple
+- Lightweight
+- No Dependency on Google
+- Fast
 
 ### Build Status:
 [![Android CI](https://github.com/ZeusInstitute-OSS/gpspic/actions/workflows/main.yml/badge.svg)](https://github.com/ZeusInstitute-OSS/gpspic/actions/workflows/main.yml)
