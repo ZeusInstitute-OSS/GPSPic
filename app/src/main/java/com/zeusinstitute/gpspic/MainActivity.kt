@@ -12,6 +12,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Looper
+import android.util.Log
+import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -30,10 +32,10 @@ import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.location.LocationRequestCompat
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -83,17 +85,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(locationResult: LocationResult) {for (location in locationResult.locations) {
-            updateLocationInfo(location)
-        }
-        }
-    }
-
-    private val locationRequest = LocationRequestCompat.Builder(10000).apply {
-        setQuality(LocationRequestCompat.QUALITY_BALANCED_POWER_ACCURACY)
-    }.build()
-
     private fun handlePermissionGranted() {
         permissionIndex++
         if (permissionIndex < permissions.size) {
@@ -128,10 +119,8 @@ class MainActivity : AppCompatActivity() {
         requestNextPermission()
 
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        locationListener = LocationListener { location ->
-            updateLocationInfo(location)
-        }
     }
+
 
     private fun toggleFlash() {
         flashMode = when (flashMode) {
@@ -233,26 +222,71 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            return
+            return // Handle permission request if needed
         }
-        locationManager.requestLocationUpdates(
-            LocationManager.GPS_PROVIDER,
-            10000, // 10 seconds
-            10f, // 10 meters
-            locationListener
-        )
+
+
+        val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+
+        val locationFlow = callbackFlow {
+            locationListener = LocationListener { location ->
+                trySend(location)
+            }
+
+            Log.d("Location", "Requesting location updates")
+            if (isGpsEnabled) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    10000, // 10 seconds
+                    10f, // 10 meters
+                    locationListener
+                )
+            }
+
+            if (isNetworkEnabled) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    10000, // 10 seconds
+                    10f, // 10 meters
+                    locationListener
+                )
+            }
+
+            awaitClose {
+                Log.d("Location", "Stopping location updates")
+                locationManager.removeUpdates(locationListener)
+            }
+        }
+
+        lifecycleScope.launch {
+            locationFlow.collect { location ->
+                Log.d("Location", "onLocationChanged: $location")
+                updateLocationInfo(location)
+            }
+        }
     }
 
-    private fun updateLocationInfo(location: Location) {
+        private fun updateLocationInfo(location: Location) {
         val geocoder = Geocoder(this, Locale.getDefault())
         try {
             val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
             if (addresses?.isNotEmpty() == true) {
                 val address = addresses[0]
+                tvLocationHeader.visibility = View.VISIBLE
+                tvDateTime.visibility = View.VISIBLE
+                tvCoordinates.visibility = View.VISIBLE
+                tvFullAddress.visibility = View.VISIBLE
+                ivMapPreview.visibility = View.VISIBLE
+
                 tvLocationHeader.text = "${address.locality}, ${address.adminArea}, ${address.countryName}"
+                Log.d("Location", "Address: ${address.getAddressLine(0)}")
                 tvDateTime.text = SimpleDateFormat("EEEE, MMMM d, yyyy h:mm a", Locale.getDefault()).format(Date())
+                Log.d("Location", "Date: ${tvDateTime.text}")
                 tvCoordinates.text = "Lat: ${location.latitude}, Long: ${location.longitude}"
+                Log.d("Location", "Coordinates: ${tvCoordinates.text}")
                 tvFullAddress.text = address.getAddressLine(0)
+                Log.d("Location", "Full Address: ${tvFullAddress.text}")
 
                 // For the map preview, you would typically use a mapping service API
                 // Here, we're just setting a placeholder
