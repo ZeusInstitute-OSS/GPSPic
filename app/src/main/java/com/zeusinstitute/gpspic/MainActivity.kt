@@ -228,6 +228,11 @@
                                 val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
                                 if (addresses?.isNotEmpty() == true) {
                                     val address = addresses[0]
+                                    tvLocationHeader.visibility = View.VISIBLE
+                                    tvDateTime.visibility = View.VISIBLE
+                                    tvCoordinates.visibility = View.VISIBLE
+                                    tvFullAddress.visibility = View.VISIBLE
+
                                     tvLocationHeader.text = "${address.locality}, ${address.adminArea}, ${address.countryName}"
                                     tvDateTime.text = SimpleDateFormat("EEEE, MMMM d, yyyy h:mm a", Locale.getDefault()).format(Date())
                                     tvCoordinates.text = "Lat: ${location.latitude}, Long: ${location.longitude}"
@@ -243,12 +248,20 @@
                         }
 
                         // Draw overlay onto Bitmap
-                        val overlayBitmap = Bitmap.createBitmap(originalBitmap.width, originalBitmap.height, Bitmap.Config.ARGB_8888)
+                        val overlayBitmap= Bitmap.createBitmap(originalBitmap.width, originalBitmap.height, Bitmap.Config.ARGB_8888)
                         val canvas = Canvas(overlayBitmap)
                         canvas.drawBitmap(originalBitmap, 0f, 0f, null)
-                        locationOverlayView.measure(View.MeasureSpec.makeMeasureSpec(canvas.width, View.MeasureSpec.EXACTLY),
-                            View.MeasureSpec.makeMeasureSpec(canvas.height, View.MeasureSpec.EXACTLY))
+
+                        // Calculate position for bottom-center
+                        locationOverlayView.measure(
+                            View.MeasureSpec.makeMeasureSpec(canvas.width, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                        )
+                        val overlayX = (canvas.width - locationOverlayView.measuredWidth) / 2f
+                        val overlayY = canvas.height - locationOverlayView.measuredHeight - 48f  // Adjust bottom margin as needed
+
                         locationOverlayView.layout(0, 0, locationOverlayView.measuredWidth, locationOverlayView.measuredHeight)
+                        canvas.translate(overlayX, overlayY)
                         locationOverlayView.draw(canvas)
 
                         // Save overlayed image
