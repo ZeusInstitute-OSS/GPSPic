@@ -32,6 +32,8 @@ Features:
 8. Website: ❌
 9. Play Store/F-Droid Release: ❌
 10. In-App Updater: ❌
+11. Volume Button Shutter: ❌
+12. Settings: ❌ (set Volume button shutter, aspect ratio of image, resolution of camera, overlay entries, etc)
 
 
 ### Versioning:
