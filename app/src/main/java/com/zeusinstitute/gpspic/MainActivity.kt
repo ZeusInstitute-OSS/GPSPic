@@ -189,7 +189,7 @@
         private fun takePhoto() {
             val imageCapture = imageCapture ?: return
 
-            val baseFileName= SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH)
+            val baseFileName = SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH)
                 .format(System.currentTimeMillis())
             val gpsPhotoFile = File(outputDirectory, "$baseFileName-GPSPic.jpg")
 
@@ -207,64 +207,35 @@
                         val savedUri = Uri.fromFile(gpsPhotoFile)
                         Toast.makeText(baseContext, "GPS photo saved: $savedUri", Toast.LENGTH_SHORT).show()
 
-                        // Get location and add overlay
                         val location = getCurrentLocation()
                         val originalBitmap = BitmapFactory.decodeFile(gpsPhotoFile.absolutePath)
 
-                        // Inflate location_details.xml
-                        val inflater = LayoutInflater.from(this@MainActivity) // Use 'this@MainActivity' for context
+                        val inflater = LayoutInflater.from(this@MainActivity)
                         val locationOverlayView = inflater.inflate(R.layout.location_details, null)
 
-                        // Populate views in locationOverlayView (You'll need to implement this part)
-                        val tvLocationHeader = locationOverlayView.findViewById<TextView>(R.id.tvLocationHeader)
-                        val tvDateTime = locationOverlayView.findViewById<TextView>(R.id.tvDateTime)
-                        val tvCoordinates = locationOverlayView.findViewById<TextView>(R.id.tvCoordinates)
-                        val tvFullAddress = locationOverlayView.findViewById<TextView>(R.id.tvFullAddress)
-                        // ... (find other views)
+                        populateLocationOverlay(locationOverlayView, location)
 
-                        if (location != null) {
-                            val geocoder = Geocoder(this@MainActivity, Locale.getDefault())
-                            try {
-                                val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
-                                if (addresses?.isNotEmpty() == true) {
-                                    val address = addresses[0]
-                                    tvLocationHeader.visibility = View.VISIBLE
-                                    tvDateTime.visibility = View.VISIBLE
-                                    tvCoordinates.visibility = View.VISIBLE
-                                    tvFullAddress.visibility = View.VISIBLE
+                        // Measure and layout the overlay view
+                        val spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                        locationOverlayView.measure(spec, spec)
+                        locationOverlayView.layout(0, 0, locationOverlayView.measuredWidth, locationOverlayView.measuredHeight)
 
-                                    tvLocationHeader.text = "${address.locality}, ${address.adminArea}, ${address.countryName}"
-                                    tvDateTime.text = SimpleDateFormat("EEEE, MMMM d, yyyy h:mm a", Locale.getDefault()).format(Date())
-                                    tvCoordinates.text = "Lat: ${location.latitude}, Long: ${location.longitude}"
-                                    tvFullAddress.text = address.getAddressLine(0)
-                                }
-                            } catch (e: Exception) {
-                                Toast.makeText(this@MainActivity, "Error getting location details", Toast.LENGTH_SHORT).show()
-                            }
-                        } else {
-                            // Handle case where location is not available
-                            tvLocationHeader.text = "Location Unavailable"
-                            // ... (set other views accordingly)
-                        }
-
-                        // Draw overlay onto Bitmap
-                        val overlayBitmap= Bitmap.createBitmap(originalBitmap.width, originalBitmap.height, Bitmap.Config.ARGB_8888)
+                        // Create a bitmap with the same size as the original image
+                        val overlayBitmap = Bitmap.createBitmap(originalBitmap.width, originalBitmap.height, Bitmap.Config.ARGB_8888)
                         val canvas = Canvas(overlayBitmap)
                         canvas.drawBitmap(originalBitmap, 0f, 0f, null)
 
                         // Calculate position for bottom-center
-                        locationOverlayView.measure(
-                            View.MeasureSpec.makeMeasureSpec(canvas.width, View.MeasureSpec.EXACTLY),
-                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-                        )
                         val overlayX = (canvas.width - locationOverlayView.measuredWidth) / 2f
-                        val overlayY = canvas.height - locationOverlayView.measuredHeight - 48f  // Adjust bottom margin as needed
+                        val overlayY = canvas.height - locationOverlayView.measuredHeight - 48f
 
-                        locationOverlayView.layout(0, 0, locationOverlayView.measuredWidth, locationOverlayView.measuredHeight)
+                        // Draw the overlay
+                        canvas.save()
                         canvas.translate(overlayX, overlayY)
                         locationOverlayView.draw(canvas)
+                        canvas.restore()
 
-                        // Save overlayed image
+                        // Save the final image
                         try {
                             FileOutputStream(gpsPhotoFile).use { out ->
                                 overlayBitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
@@ -279,6 +250,38 @@
                 }
             )
         }
+
+        private fun populateLocationOverlay(view: View, location: Location?) {
+            val tvLocationHeader = view.findViewById<TextView>(R.id.tvLocationHeader)
+            val tvDateTime = view.findViewById<TextView>(R.id.tvDateTime)
+            val tvCoordinates = view.findViewById<TextView>(R.id.tvCoordinates)
+            val tvFullAddress = view.findViewById<TextView>(R.id.tvFullAddress)
+            val ivMapPreview = view.findViewById<ImageView>(R.id.ivMapPreview)
+
+            if (location != null) {
+                val geocoder = Geocoder(this@MainActivity, Locale.getDefault())
+                try {
+                    val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                    if (addresses?.isNotEmpty() == true) {
+                        val address = addresses[0]
+                        tvLocationHeader.text = "${address.locality}, ${address.adminArea}, ${address.countryName}"
+                        tvDateTime.text = SimpleDateFormat("EEEE, MMMM d, yyyy h:mm a", Locale.getDefault()).format(Date())
+                        tvCoordinates.text = "Lat: ${location.latitude}, Long: ${location.longitude}"
+                        tvFullAddress.text = address.getAddressLine(0)
+                        ivMapPreview.setImageResource(R.drawable.map_placeholder)
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "Error getting location details", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                tvLocationHeader.text = "Location Unavailable"
+                tvDateTime.text = SimpleDateFormat("EEEE, MMMM d, yyyy h:mm a", Locale.getDefault()).format(Date())
+                tvCoordinates.text = "Coordinates unavailable"
+                tvFullAddress.text = "Address unavailable"
+                ivMapPreview.setImageResource(R.drawable.map_placeholder)
+            }
+        }
+
         private fun getCurrentLocation(): Location? {
             if (ActivityCompat.checkSelfPermission(
                     this,
