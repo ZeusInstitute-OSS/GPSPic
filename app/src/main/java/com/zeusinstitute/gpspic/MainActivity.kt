@@ -2,15 +2,18 @@ package com.zeusinstitute.gpspic
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.location.LocationRequest
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Looper
 import android.util.Log
 import android.view.View
@@ -31,6 +34,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.location.LocationRequestCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.channels.awaitClose
@@ -49,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraCaptureButton: ImageButton
     private lateinit var flashButton: ImageButton
     private lateinit var cameraSwitchButton: ImageButton
+    private lateinit var galleryButton: ImageButton
 
     private lateinit var tvLocationHeader: TextView
     private lateinit var tvDateTime: TextView
@@ -109,10 +114,12 @@ class MainActivity : AppCompatActivity() {
         tvCoordinates = findViewById(R.id.tvCoordinates)
         tvFullAddress = findViewById(R.id.tvFullAddress)
         ivMapPreview = findViewById(R.id.ivMapPreview)
+        galleryButton = findViewById(R.id.gallery_button)
 
         cameraCaptureButton.setOnClickListener { takePhoto() }
         flashButton.setOnClickListener { toggleFlash() }
         cameraSwitchButton.setOnClickListener { toggleCamera() }
+        galleryButton.setOnClickListener { openLastImageInGallery() }
         outputDirectory = getOutputDirectory()
         cameraExecutor = Executors.newSingleThreadExecutor()
 
@@ -160,9 +167,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun takePhoto() {
         val imageCapture = imageCapture ?: return
+
+        // Play shutter sound
+//        val mediaPlayer = MediaPlayer.create(this, R.raw.shutter)
+//        mediaPlayer.start()
+
         val photoFile = File(
             outputDirectory,
-            SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH).format(System.currentTimeMillis()) + ".jpg"
+            SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH).format(System.currentTimeMillis()) + "-GPSPic.jpg"
         )
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
@@ -181,6 +193,32 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         )
+    }
+
+    private fun getLastImageFile(): File? {
+        val files = outputDirectory.listFiles()?.filter {
+            it.isFile && it.name.endsWith("-GPSPic.jpg")
+        }
+        return files?.maxByOrNull { it.lastModified() }
+    }
+    private fun openLastImageInGallery() {
+        val lastImageFile = getLastImageFile() ?: return
+        val uri = FileProvider.getUriForFile(
+            this,
+            "com.zeusinstitute.gpspic.fileprovider", // Match the authority
+            lastImageFile
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "image/*")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(intent)
+    }
+
+    private fun getOutputDirectory(): File {
+        val mediaDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            ?.let { File(it, "GPSPic").apply { mkdirs() } } // Ensure "GPSPic" directory is created
+        return mediaDir ?: filesDir
     }
 
     private fun startCamera() {
@@ -295,14 +333,6 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Toast.makeText(this, "Error getting location details", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    private fun getOutputDirectory(): File {
-        val mediaDir = externalMediaDirs.firstOrNull()?.let {
-            File(it, resources.getString(R.string.app_name)).apply { mkdirs() }
-        }
-        return if (mediaDir != null && mediaDir.exists())
-            mediaDir else filesDir
     }
 
     private fun showPermissionRationaleDialog() {
