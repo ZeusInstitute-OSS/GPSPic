@@ -2,7 +2,6 @@
     
     import android.Manifest
     import android.annotation.SuppressLint
-    import android.content.ContentValues
     import android.content.Context
     import android.content.Intent
     import android.content.pm.PackageManager
@@ -23,7 +22,6 @@
     import android.os.Build
     import android.os.Bundle
     import android.os.Environment
-    import android.provider.MediaStore
     import android.util.Log
     import android.view.LayoutInflater
     import android.view.View
@@ -44,7 +42,6 @@
     import androidx.core.app.ActivityCompat
     import androidx.core.content.ContextCompat
     import androidx.core.content.FileProvider
-    import androidx.core.net.toFile
     import androidx.lifecycle.lifecycleScope
     import kotlinx.coroutines.channels.awaitClose
     import kotlinx.coroutines.flow.callbackFlow
@@ -198,67 +195,26 @@
         private fun takePhoto() {
             val imageCapture = imageCapture ?: return
 
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, "GPSPic_${System.currentTimeMillis()}.jpg")
-                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DCIM + "/Camera")
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }
-            }
+            val baseFileName = SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH)
+                .format(System.currentTimeMillis())
+            val gpsPhotoFile = File(outputDirectory, "$baseFileName-GPSPic.jpg")
 
-            val contentResolver = contentResolver
-            val imageUri: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-            } else {
-                null // For older devices, we'll use a File object later
-            }
+            val gpsOutputOptions = ImageCapture.OutputFileOptions.Builder(gpsPhotoFile).build()
 
-            val gpsOutputOptions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ImageCapture.OutputFileOptions.Builder(contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues).build()
-            } else {
-                val baseFileName = SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH)
-                    .format(System.currentTimeMillis())
-                val gpsPhotoFile = File(outputDirectory, "$baseFileName-GPSPic.jpg")
-                ImageCapture.OutputFileOptions.Builder(gpsPhotoFile).build()
-            }
             imageCapture.takePicture(
                 gpsOutputOptions,
                 ContextCompat.getMainExecutor(this),
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onError(exc: ImageCaptureException) {
-                        Toast.makeText(
-                            baseContext,
-                            "Photo capture failed: ${exc.message}",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        Toast.makeText(baseContext, "GPS photo capture failed: ${exc.message}", Toast.LENGTH_SHORT).show()
                     }
 
                     override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            contentValues.clear()
-                            contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                            contentResolver.update(imageUri!!, contentValues, null, null)
-                            Toast.makeText(
-                                baseContext,
-                                "Photo saved to DCIM/Camera",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        } else {
-                            val savedUri = Uri.fromFile(output.savedUri!!.toFile())
-                            Toast.makeText(
-                                baseContext,
-                                "Photo saved: $savedUri",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
+                        val savedUri = Uri.fromFile(gpsPhotoFile)
+                        Toast.makeText(baseContext, "GPS photo saved: $savedUri", Toast.LENGTH_SHORT).show()
 
                         val location = getCurrentLocation()
-
-                        val originalBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            BitmapFactory.decodeStream(contentResolver.openInputStream(imageUri!!))
-                        } else {
-                            BitmapFactory.decodeFile(output.savedUri!!.toFile().absolutePath)
-                        }
+                        val originalBitmap = BitmapFactory.decodeFile(gpsPhotoFile.absolutePath)
 
                         val inflater = LayoutInflater.from(this@MainActivity)
                         val locationOverlayView = inflater.inflate(R.layout.location_details, null)
@@ -268,19 +224,10 @@
                         // Measure and layout the overlay view
                         val spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                         locationOverlayView.measure(spec, spec)
-                        locationOverlayView.layout(
-                            0,
-                            0,
-                            locationOverlayView.measuredWidth,
-                            locationOverlayView.measuredHeight
-                        )
+                        locationOverlayView.layout(0, 0, locationOverlayView.measuredWidth, locationOverlayView.measuredHeight)
 
                         // Create a bitmap with the same size as the original image
-                        val overlayBitmap = Bitmap.createBitmap(
-                            originalBitmap.width,
-                            originalBitmap.height,
-                            Bitmap.Config.ARGB_8888
-                        )
+                        val overlayBitmap = Bitmap.createBitmap(originalBitmap.width, originalBitmap.height, Bitmap.Config.ARGB_8888)
                         val canvas = Canvas(overlayBitmap)
                         canvas.drawBitmap(originalBitmap, 0f, 0f, null)
 
@@ -299,25 +246,11 @@
 
                         // Save the final image
                         try {
-                            val baseFileName = SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH)
-                                .format(System.currentTimeMillis())
-                            val gpsPhotoFile = File(outputDirectory, "$baseFileName-GPSPic.jpg")
-
-                            val outputStream = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                contentResolver.openOutputStream(imageUri!!) // For MediaStore
-                            } else {
-                                FileOutputStream(gpsPhotoFile) // For older devices
-                            }
-
-                            outputStream?.use { out ->
+                            FileOutputStream(gpsPhotoFile).use { out ->
                                 overlayBitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
                             }
                         } catch (e: IOException) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Failed to save overlayed image",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(this@MainActivity, "Failed to save overlayed image", Toast.LENGTH_SHORT).show()
                         } finally {
                             originalBitmap.recycle()
                             overlayBitmap.recycle()
