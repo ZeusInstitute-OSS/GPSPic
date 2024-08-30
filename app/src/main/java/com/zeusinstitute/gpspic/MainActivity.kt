@@ -10,6 +10,10 @@
     import android.graphics.Canvas
     import android.graphics.Color
     import android.graphics.Paint
+    import android.graphics.PorterDuff
+    import android.graphics.PorterDuffXfermode
+    import android.graphics.Rect
+    import android.graphics.drawable.BitmapDrawable
     import android.location.Geocoder
     import android.location.Location
     import android.location.LocationListener
@@ -103,6 +107,12 @@
                     showPermissionRationaleDialog()
                 }
             }
+
+        private fun getOutputDirectory(): File {
+            val mediaDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                ?.let { File(it, "GPSPic").apply { mkdirs() } }
+            return mediaDir ?: filesDir
+        }
     
         private fun handlePermissionGranted() {
             permissionIndex++
@@ -124,8 +134,9 @@
             cameraCaptureButton = findViewById(R.id.camera_capture_button)
     
             galleryButton = findViewById(R.id.gallery_button)
-    
-           // locationRecyclerView = findViewById(R.id.locationRecyclerView)
+            outputDirectory = getOutputDirectory()
+
+            // locationRecyclerView = findViewById(R.id.locationRecyclerView)
 
             // Initialize location overlay views
             tvLocationHeader = findViewById(R.id.tvLocationHeader)
@@ -139,7 +150,10 @@
             flashButton.setOnClickListener { toggleFlash() }
             cameraSwitchButton.setOnClickListener { toggleCamera() }
             galleryButton.setOnClickListener { openLastImageInGallery() }
-            outputDirectory = getOutputDirectory()
+
+            // Update the gallery button preview
+            updateGalleryButtonPreview()
+
             cameraExecutor = Executors.newSingleThreadExecutor()
     
          //   locationRecyclerView.layoutManager = LinearLayoutManager(this)
@@ -235,6 +249,9 @@
                         locationOverlayView.draw(canvas)
                         canvas.restore()
 
+                        // After saving the image, update the gallery button preview
+                        updateGalleryButtonPreview()
+
                         // Save the final image
                         try {
                             FileOutputStream(gpsPhotoFile).use { out ->
@@ -329,12 +346,6 @@
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(intent)
-        }
-    
-        private fun getOutputDirectory(): File {
-            val mediaDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-                ?.let { File(it, "GPSPic").apply { mkdirs() } }
-            return mediaDir ?: filesDir
         }
     
         private fun startCamera() {
@@ -450,7 +461,52 @@
                 Toast.makeText(this, "Error getting location details", Toast.LENGTH_SHORT).show()
             }
         }
-    
+
+        private fun updateGalleryButtonPreview() {
+            val lastImageFile = getLastImageFile()
+            if (lastImageFile != null) {
+                try {
+                    // Load the image as a Bitmap
+                    val bitmap = BitmapFactory.decodeFile(lastImageFile.absolutePath)
+
+                    // Create a circular bitmap
+                    val circularBitmap = getCircularBitmap(bitmap)
+
+                    // Set the circular bitmap as the background of the gallery button
+                    galleryButton.background = BitmapDrawable(resources, circularBitmap)
+
+                    // Optionally, you can add a border to make it stand out
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        galleryButton.foreground = ContextCompat.getDrawable(this, R.drawable.circular_border)
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error loading last image preview", e)
+                    // If there's an error, set a default background
+                    galleryButton.setBackgroundResource(R.drawable.ic_gallery)
+                }
+            } else {
+                // If no image is found, set the default gallery icon
+                galleryButton.setBackgroundResource(R.drawable.ic_gallery)
+            }
+        }
+
+        private fun getCircularBitmap(bitmap: Bitmap): Bitmap {
+            val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(output)
+
+            val paint = Paint()
+            val rect = Rect(0, 0, bitmap.width, bitmap.height)
+
+            paint.isAntiAlias = true
+            canvas.drawARGB(0, 0, 0, 0)
+            canvas.drawCircle(bitmap.width / 2f, bitmap.height / 2f, bitmap.width / 2f, paint)
+
+            paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+            canvas.drawBitmap(bitmap, rect, rect, paint)
+
+            return output
+        }
+
         private fun showPermissionRationaleDialog() {
             AlertDialog.Builder(this)
                 .setTitle("Permission Required")
