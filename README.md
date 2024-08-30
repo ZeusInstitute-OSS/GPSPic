@@ -1,4 +1,4 @@
-# GPS Picture
+# GPS Photo
 Open Source GPS Camera
 
 Mark the location of activities by embedding data onto the image. Ensure things were done where they were done and when they were done!
@@ -10,7 +10,7 @@ Features:
 - Fast
 
 ### Build Status:
-[![Android CI](https://github.com/ZeusInstitute-OSS/gpspic/actions/workflows/main.yml/badge.svg)](https://github.com/ZeusInstitute-OSS/gpspic/actions/workflows/main.yml)
+[![Android CI](https://github.com/sounddrill31/GPSPic/actions/workflows/main.yml/badge.svg)](https://github.com/sounddrill31/GPSPic/actions/workflows/main.yml)
 
 # Roadmap:
 ✅ Done
