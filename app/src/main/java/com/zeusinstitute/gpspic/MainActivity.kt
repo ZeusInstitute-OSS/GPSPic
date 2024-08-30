@@ -1,6 +1,9 @@
     package com.zeusinstitute.gpspic
     
     import android.Manifest
+    import android.graphics.Matrix
+    import androidx.exifinterface.media.ExifInterface
+    import java.io.ByteArrayOutputStream
     import android.annotation.SuppressLint
     import android.content.Context
     import android.content.Intent
@@ -199,19 +202,20 @@
                 .format(System.currentTimeMillis())
             val gpsPhotoFile = File(outputDirectory, "$baseFileName-GPSPic.jpg")
 
-            val gpsOutputOptions = ImageCapture.OutputFileOptions.Builder(gpsPhotoFile).build()
+            val outputOptions = ImageCapture.OutputFileOptions.Builder(gpsPhotoFile).build()
 
             imageCapture.takePicture(
-                gpsOutputOptions,
+                outputOptions,
                 ContextCompat.getMainExecutor(this),
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                         val savedUri = Uri.fromFile(gpsPhotoFile)
-                        Toast.makeText(baseContext, "GPS photo saved: $savedUri", Toast.LENGTH_SHORT).show()
+
+                        // Rotate the image if needed
+                        rotateImageIfRequired(gpsPhotoFile)
 
                         val location = getCurrentLocation()
                         val originalBitmap = BitmapFactory.decodeFile(gpsPhotoFile.absolutePath)
-
                         val inflater = LayoutInflater.from(this@MainActivity)
                         val locationOverlayView = inflater.inflate(R.layout.location_details, null)
 
@@ -362,14 +366,15 @@
     
         private fun startCamera() {
             val viewFinder = findViewById<PreviewView>(R.id.viewFinder)
-            val cameraProviderFuture =ProcessCameraProvider.getInstance(this)
-    
+            val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
             cameraProviderFuture.addListener({
                 val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-    
+
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(viewFinder.surfaceProvider)
                 }
+
                 imageCapture = ImageCapture.Builder()
                     .setFlashMode(
                         when (flashMode) {
@@ -378,8 +383,9 @@
                             FlashMode.OFF -> ImageCapture.FLASH_MODE_OFF
                         }
                     )
+                    .setTargetRotation(windowManager.defaultDisplay.rotation)
                     .build()
-    
+
                 try {
                     cameraProvider.unbindAll()
                     cameraProvider.bindToLifecycle(
@@ -535,6 +541,43 @@
                 }
                 .show()
         }
+
+
+        private fun rotateImageIfRequired(file: File) {
+            val exif = ExifInterface(file.absolutePath)
+            val orientation = exif.getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+
+            val rotation = when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+
+            if (rotation != 0) {
+                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                val matrix = Matrix()
+                matrix.postRotate(rotation.toFloat())
+                val rotatedBitmap = Bitmap.createBitmap(
+                    bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
+                )
+
+                ByteArrayOutputStream().use { stream ->
+                    rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
+                    FileOutputStream(file).use { out ->
+                        out.write(stream.toByteArray())
+                    }
+                }
+
+                // Clean up
+                bitmap.recycle()
+                rotatedBitmap.recycle()
+            }
+        }
+
     
         override fun onDestroy() {
             super.onDestroy()
