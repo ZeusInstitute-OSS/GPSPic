@@ -18,17 +18,13 @@
     import android.location.Location
     import android.location.LocationListener
     import android.location.LocationManager
-    import android.location.LocationRequest
-    import android.media.MediaPlayer
     import android.net.Uri
     import android.os.Build
     import android.os.Bundle
     import android.os.Environment
-    import android.os.Looper
     import android.util.Log
     import android.view.LayoutInflater
     import android.view.View
-    import android.widget.Button
     import android.widget.ImageButton
     import android.widget.ImageView
     import android.widget.TextView
@@ -46,10 +42,7 @@
     import androidx.core.app.ActivityCompat
     import androidx.core.content.ContextCompat
     import androidx.core.content.FileProvider
-    import androidx.core.location.LocationRequestCompat
     import androidx.lifecycle.lifecycleScope
-    import androidx.recyclerview.widget.LinearLayoutManager
-    import androidx.recyclerview.widget.RecyclerView
     import kotlinx.coroutines.channels.awaitClose
     import kotlinx.coroutines.flow.callbackFlow
     import kotlinx.coroutines.launch
@@ -143,7 +136,6 @@
             tvDateTime = findViewById(R.id.tvDateTime)
             tvCoordinates = findViewById(R.id.tvCoordinates)
             tvFullAddress = findViewById(R.id.tvFullAddress)
-            ivMapPreview = findViewById(R.id.ivMapPreview)
 
 
             cameraCaptureButton.setOnClickListener { takePhoto() }
@@ -273,7 +265,6 @@
             val tvDateTime = view.findViewById<TextView>(R.id.tvDateTime)
             val tvCoordinates = view.findViewById<TextView>(R.id.tvCoordinates)
             val tvFullAddress = view.findViewById<TextView>(R.id.tvFullAddress)
-            val ivMapPreview = view.findViewById<ImageView>(R.id.ivMapPreview)
 
             if (location != null) {
                 val geocoder = Geocoder(this@MainActivity, Locale.getDefault())
@@ -441,19 +432,18 @@
                 val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
                 if (addresses?.isNotEmpty() == true) {
                     val address = addresses[0]
-    
+                    val countryCode = address.countryCode
+
                     val locationItem = LocationData(
                         "${address.locality}, ${address.adminArea}, ${address.countryName}",
                         SimpleDateFormat("EEEE, MMMM d, yyyy h:mm a", Locale.getDefault()).format(Date()),
                         "Lat: ${location.latitude}, Long: ${location.longitude}",
                         address.getAddressLine(0),
-                        R.drawable.map_placeholder // Replace with actual map image later
                     )
                     tvLocationHeader.text = "${address.locality}, ${address.adminArea}, ${address.countryName}"
                     tvDateTime.text = SimpleDateFormat("EEEE, MMMM d, yyyy h:mm a", Locale.getDefault()).format(Date())
                     tvCoordinates.text = "Lat: ${location.latitude}, Long: ${location.longitude}"
                     tvFullAddress.text = address.getAddressLine(0)
-                    ivMapPreview.setImageResource(R.drawable.map_placeholder)
 
                     locationData.add(locationItem)
                 }
@@ -541,7 +531,6 @@
             val dateTime: String,
             val coordinates: String,
             val fullAddress: String,
-            val mapPreview: Int // Placeholder for now, you'd use a map image later
         )
     
     }
