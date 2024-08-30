@@ -1,16 +1,21 @@
 package com.zeusinstitute.gpspic
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationListener
+import android.location.LocationManager
 import android.location.LocationRequest
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Looper
 import android.widget.Button
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.TextView
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import java.util.Locale
@@ -39,11 +44,31 @@ class MainActivity : AppCompatActivity() {
     private var imageCapture: ImageCapture? = null
     private lateinit var outputDirectory: File
     private lateinit var cameraExecutor: ExecutorService
-    private lateinit var cameraCaptureButton: Button
+    private lateinit var cameraCaptureButton: ImageButton
+    private lateinit var flashButton: ImageButton
+    private lateinit var cameraSwitchButton: ImageButton
+
+    private lateinit var tvLocationHeader: TextView
+    private lateinit var tvDateTime: TextView
+    private lateinit var tvCoordinates: TextView
+    private lateinit var tvFullAddress: TextView
+    private lateinit var ivMapPreview: ImageView
+
+
+    private lateinit var locationManager: LocationManager
+    private lateinit var locationListener: LocationListener
+
+    private var cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+    private enum class FlashMode {
+        OFF, ON, AUTO
+    }
+
+    private var flashMode = FlashMode.OFF
 
     private val permissions = arrayOf(
         Manifest.permission.CAMERA,
-        Manifest.permission.ACCESS_FINE_LOCATION // Request fine location for better accuracy
+        Manifest.permission.ACCESS_COARSE_LOCATION
     )
     private var permissionIndex = 0
 
@@ -69,59 +94,73 @@ class MainActivity : AppCompatActivity() {
         setQuality(LocationRequestCompat.QUALITY_BALANCED_POWER_ACCURACY)
     }.build()
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        cameraCaptureButton = findViewById(R.id.camera_capture_button)
-
-        cameraCaptureButton.setOnClickListener { takePhoto() }
-        outputDirectory = getOutputDirectory()
-        cameraExecutor = Executors.newSingleThreadExecutor()
-
-        requestNextPermission()
-
-        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-            Toast.makeText(baseContext, "Permission Missing", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            // For API 24 and above, use LocationCallback
-            fusedLocationClient.requestLocationUpdates(
-                locationRequest,
-                locationCallback,
-                null // Use null for Looper to get updates on a separate thread
-            ).addOnSuccessListener {
-                // Location updates successfully requested
-            }
-        } else {
-            // For API levels below 24, use LocationListener
-            val locationListener = LocationListener { location ->
-                // Handle location update here
-                updateLocationInfo(location)
-            }
-        }
-    }
-
     private fun handlePermissionGranted() {
         permissionIndex++
         if (permissionIndex < permissions.size) {
             requestNextPermission()
         } else {
             startCamera()
+            startLocationUpdates()
         }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        flashButton = findViewById(R.id.flash_button)
+        cameraSwitchButton = findViewById(R.id.camera_switch_button)
+        cameraCaptureButton = findViewById(R.id.camera_capture_button)
+
+        // Initialize location overlay views
+        tvLocationHeader = findViewById(R.id.tvLocationHeader)
+        tvDateTime = findViewById(R.id.tvDateTime)
+        tvCoordinates = findViewById(R.id.tvCoordinates)
+        tvFullAddress = findViewById(R.id.tvFullAddress)
+        ivMapPreview = findViewById(R.id.ivMapPreview)
+
+        cameraCaptureButton.setOnClickListener { takePhoto() }
+        flashButton.setOnClickListener { toggleFlash() }
+        cameraSwitchButton.setOnClickListener { toggleCamera() }
+        outputDirectory = getOutputDirectory()
+        cameraExecutor = Executors.newSingleThreadExecutor()
+
+        requestNextPermission()
+
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationListener = LocationListener { location ->
+            updateLocationInfo(location)
+        }
+    }
+
+    private fun toggleFlash() {
+        flashMode = when (flashMode) {
+            FlashMode.OFF -> FlashMode.ON
+            FlashMode.ON -> FlashMode.AUTO
+            FlashMode.AUTO -> FlashMode.OFF
+        }
+        updateFlashIcon()
+        startCamera() // Restart camera to apply new flash settings
+    }
+
+
+    private fun updateFlashIcon() {
+        flashButton.setImageResource(
+            when (flashMode) {
+                FlashMode.ON -> R.drawable.ic_flash_on
+                FlashMode.AUTO -> R.drawable.ic_flash_auto
+                FlashMode.OFF -> R.drawable.ic_flash_off
+            }
+        )
+    }
+
+    private fun toggleCamera() {
+        cameraSelector = if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        }
+        startCamera()
     }
 
     private fun requestNextPermission() {
@@ -162,15 +201,19 @@ class MainActivity : AppCompatActivity() {
         cameraProviderFuture.addListener({
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
 
-            val preview = Preview.Builder()
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(viewFinder.surfaceProvider)
+            }
+
+            imageCapture = ImageCapture.Builder()
+                .setFlashMode(
+                    when (flashMode) {
+                        FlashMode.ON -> ImageCapture.FLASH_MODE_ON
+                        FlashMode.AUTO -> ImageCapture.FLASH_MODE_AUTO
+                        FlashMode.OFF -> ImageCapture.FLASH_MODE_OFF
+                    }
+                )
                 .build()
-                .also {
-                    it.setSurfaceProvider(viewFinder.surfaceProvider)
-                }
-
-            imageCapture = ImageCapture.Builder().build()
-
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             try {
                 cameraProvider.unbindAll()
@@ -184,9 +227,40 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    private fun startLocationUpdates() {
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        locationManager.requestLocationUpdates(
+            LocationManager.GPS_PROVIDER,
+            10000, // 10 seconds
+            10f, // 10 meters
+            locationListener
+        )
+    }
+
     private fun updateLocationInfo(location: Location) {
-        // TODO: Update UI elements with location data (latitude, longitude, etc.)
-        // You'll likely use Geocoder here to get address information
+        val geocoder = Geocoder(this, Locale.getDefault())
+        try {
+            val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+            if (addresses?.isNotEmpty() == true) {
+                val address = addresses[0]
+                tvLocationHeader.text = "${address.locality}, ${address.adminArea}, ${address.countryName}"
+                tvDateTime.text = SimpleDateFormat("EEEE, MMMM d, yyyy h:mm a", Locale.getDefault()).format(Date())
+                tvCoordinates.text = "Lat: ${location.latitude}, Long: ${location.longitude}"
+                tvFullAddress.text = address.getAddressLine(0)
+
+                // For the map preview, you would typically use a mapping service API
+                // Here, we're just setting a placeholder
+                ivMapPreview.setImageResource(R.drawable.map_placeholder)
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error getting location details", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun getOutputDirectory(): File {
@@ -218,6 +292,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cameraExecutor.shutdown()
+        locationManager.removeUpdates(locationListener)
     }
 
     companion object {
