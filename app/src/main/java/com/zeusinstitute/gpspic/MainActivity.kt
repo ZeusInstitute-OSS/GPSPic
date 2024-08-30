@@ -86,7 +86,7 @@
     
         private val permissions = arrayOf(
             Manifest.permission.CAMERA,
-            Manifest.permission.ACCESS_COARSE_LOCATION
+            Manifest.permission.ACCESS_FINE_LOCATION
         )
         private var permissionIndex = 0
     
@@ -205,10 +205,6 @@
                 gpsOutputOptions,
                 ContextCompat.getMainExecutor(this),
                 object : ImageCapture.OnImageSavedCallback {
-                    override fun onError(exc: ImageCaptureException) {
-                        Toast.makeText(baseContext, "GPS photo capture failed: ${exc.message}", Toast.LENGTH_SHORT).show()
-                    }
-
                     override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                         val savedUri = Uri.fromFile(gpsPhotoFile)
                         Toast.makeText(baseContext, "GPS photo saved: $savedUri", Toast.LENGTH_SHORT).show()
@@ -221,7 +217,7 @@
 
                         populateLocationOverlay(locationOverlayView, location)
 
-                        // Measure and layout the overlay view
+                        // Measure and layout the overlay view (IMPORTANT: Do this before calculating dimensions)
                         val spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                         locationOverlayView.measure(spec, spec)
                         locationOverlayView.layout(0, 0, locationOverlayView.measuredWidth, locationOverlayView.measuredHeight)
@@ -231,13 +227,33 @@
                         val canvas = Canvas(overlayBitmap)
                         canvas.drawBitmap(originalBitmap, 0f, 0f, null)
 
-                        // Calculate position for bottom-center
-                        val overlayX = (canvas.width - locationOverlayView.measuredWidth) / 2f
-                        val overlayY = canvas.height - locationOverlayView.measuredHeight - 48f
+                        // Calculate the aspect ratio of the overlay view
+                        val overlayAspectRatio = locationOverlayView.measuredWidth.toFloat() / locationOverlayView.measuredHeight.toFloat()
 
-                        // Draw the overlay
+                        // Set a maximum width for the overlay (e.g., 90% of the canvas width)
+                        val maxOverlayWidth = canvas.width * 0.9f
+
+                        // Calculate the overlay width and height based on aspect ratio and maximum width
+                        var overlayWidth = maxOverlayWidth
+                        var overlayHeight = overlayWidth / overlayAspectRatio
+
+                        // If the calculated height exceeds a certain limit (e.g., 30% of canvas height), adjust dimensions
+                        if (overlayHeight > canvas.height * 0.3f) {
+                            overlayHeight = canvas.height * 0.3f
+                            overlayWidth = overlayHeight * overlayAspectRatio
+                        }
+
+                        // Recalculate the position for bottom-center with adjusted dimensions
+                        val overlayX = (canvas.width - overlayWidth) / 2f
+                        val overlayY = canvas.height - overlayHeight - 48f // Adjust bottom margin as needed
+
+                        // Scale the canvas to fit the overlay content
+                        val scaleFactor = overlayWidth / locationOverlayView.measuredWidth
                         canvas.save()
                         canvas.translate(overlayX, overlayY)
+                        canvas.scale(scaleFactor, scaleFactor)
+
+                        // Draw the overlay on the scaled canvas
                         locationOverlayView.draw(canvas)
                         canvas.restore()
 
@@ -255,6 +271,11 @@
                             originalBitmap.recycle()
                             overlayBitmap.recycle()
                         }
+                    }
+
+                    override fun onError(exception: ImageCaptureException) {
+                        Toast.makeText(this@MainActivity, "Image Error", Toast.LENGTH_SHORT).show()
+
                     }
                 }
             )
@@ -293,7 +314,7 @@
         private fun getCurrentLocation(): Location? {
             if (ActivityCompat.checkSelfPermission(
                     this,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+                    Manifest.permission.ACCESS_FINE_LOCATION
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
                 return null // Handle permission request if needed
@@ -379,7 +400,7 @@
         private fun startLocationUpdates() {
             if (ActivityCompat.checkSelfPermission(
                     this,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+                    Manifest.permission.ACCESS_FINE_LOCATION
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
                 return // Handle permission request if needed
