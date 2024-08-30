@@ -4,6 +4,11 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationListener
@@ -37,10 +42,14 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.location.LocationRequestCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
@@ -61,6 +70,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvFullAddress: TextView
     private lateinit var ivMapPreview: ImageView
 
+    private val locationData = mutableListOf<LocationData>()
+
+    private lateinit var locationAdapter: LocationAdapter
+    private lateinit var locationRecyclerView: RecyclerView
 
     private lateinit var locationManager: LocationManager
     private lateinit var locationListener: LocationListener
@@ -109,12 +122,14 @@ class MainActivity : AppCompatActivity() {
         cameraCaptureButton = findViewById(R.id.camera_capture_button)
 
         // Initialize location overlay views
-        tvLocationHeader = findViewById(R.id.tvLocationHeader)
+        /*tvLocationHeader = findViewById(R.id.tvLocationHeader)
         tvDateTime = findViewById(R.id.tvDateTime)
         tvCoordinates = findViewById(R.id.tvCoordinates)
         tvFullAddress = findViewById(R.id.tvFullAddress)
-        ivMapPreview = findViewById(R.id.ivMapPreview)
+        ivMapPreview = findViewById(R.id.ivMapPreview)*/
         galleryButton = findViewById(R.id.gallery_button)
+
+        locationRecyclerView = findViewById(R.id.locationRecyclerView)
 
         cameraCaptureButton.setOnClickListener { takePhoto() }
         flashButton.setOnClickListener { toggleFlash() }
@@ -122,6 +137,10 @@ class MainActivity : AppCompatActivity() {
         galleryButton.setOnClickListener { openLastImageInGallery() }
         outputDirectory = getOutputDirectory()
         cameraExecutor = Executors.newSingleThreadExecutor()
+
+        locationRecyclerView.layoutManager = LinearLayoutManager(this)
+        locationAdapter = LocationAdapter(locationData)
+        locationRecyclerView.adapter = locationAdapter
 
         requestNextPermission()
 
@@ -168,16 +187,15 @@ class MainActivity : AppCompatActivity() {
     private fun takePhoto() {
         val imageCapture = imageCapture ?: return
 
-        // Play shutter sound
-//        val mediaPlayer = MediaPlayer.create(this, R.raw.shutter)
-//        mediaPlayer.start()
+        val baseFileName = SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH)
+            .format(System.currentTimeMillis())
+        val photoFile = File(outputDirectory, "$baseFileName.jpg") // Normal photo
+        val gpsPhotoFile = File(outputDirectory, "$baseFileName-GPSPic.jpg") // GPS overlay photo
 
-        val photoFile = File(
-            outputDirectory,
-            SimpleDateFormat(FILENAME_FORMAT, Locale.ENGLISH).format(System.currentTimeMillis()) + "-GPSPic.jpg"
-        )
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+        val gpsOutputOptions = ImageCapture.OutputFileOptions.Builder(gpsPhotoFile).build()
 
+        // Capture normal photo
         imageCapture.takePicture(
             outputOptions,
             ContextCompat.getMainExecutor(this),
@@ -188,11 +206,76 @@ class MainActivity : AppCompatActivity() {
 
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     val savedUri = Uri.fromFile(photoFile)
-                    val msg = "Photo capture succeeded: $savedUri"
-                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(baseContext, "Normal photo saved: $savedUri", Toast.LENGTH_SHORT).show()
                 }
             }
         )
+
+        // Capture photo with GPS overlay
+        imageCapture.takePicture(
+            gpsOutputOptions,
+            ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onError(exc: ImageCaptureException) {
+                    Toast.makeText(baseContext, "GPS photo capture failed: ${exc.message}", Toast.LENGTH_SHORT).show()
+                }
+
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    val savedUri = Uri.fromFile(gpsPhotoFile)
+                    Toast.makeText(baseContext, "GPS photo saved: $savedUri", Toast.LENGTH_SHORT).show()
+
+                    // Get location and add overlay
+                    val location = getCurrentLocation()
+                    val originalBitmap = BitmapFactory.decodeFile(gpsPhotoFile.absolutePath)
+                    val overlayBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
+                    addLocationOverlayToBitmap(overlayBitmap, location)
+
+                    // Save overlayed image
+                    try {
+                        FileOutputStream(gpsPhotoFile).use { out ->
+                            overlayBitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
+                        }
+                    } catch (e: IOException) {
+                        Toast.makeText(
+                            baseContext,
+                            "Failed to save overlayed image",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } finally {
+                        originalBitmap.recycle()
+                        overlayBitmap.recycle()
+                    }
+                }
+            }
+        )
+    }
+
+    private fun getCurrentLocation(): Location? {
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return null // Handle permission request if needed
+        }
+        return locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+    }
+
+    private fun addLocationOverlayToBitmap(bitmap: Bitmap, location: Location?) {
+        val canvas = Canvas(bitmap)
+        val paint = Paint().apply {
+            color = Color.WHITE
+            textSize = 30f // Adjust text size as needed
+        }
+
+        val locationText = if (location != null) {
+            "Lat: ${location.latitude}, Long: ${location.longitude}"
+        } else {
+            "Location unavailable"
+        }
+
+        canvas.drawText(locationText, 10f, 50f, paint) // Adjust position as needed
     }
 
     private fun getLastImageFile(): File? {
@@ -201,6 +284,7 @@ class MainActivity : AppCompatActivity() {
         }
         return files?.maxByOrNull { it.lastModified() }
     }
+
     private fun openLastImageInGallery() {
         val lastImageFile = getLastImageFile() ?: return
         val uri = FileProvider.getUriForFile(
@@ -217,13 +301,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun getOutputDirectory(): File {
         val mediaDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            ?.let { File(it, "GPSPic").apply { mkdirs() } } // Ensure "GPSPic" directory is created
+            ?.let { File(it, "GPSPic").apply { mkdirs() } }
         return mediaDir ?: filesDir
     }
 
     private fun startCamera() {
         val viewFinder = findViewById<PreviewView>(R.id.viewFinder)
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        val cameraProviderFuture =ProcessCameraProvider.getInstance(this)
 
         cameraProviderFuture.addListener({
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
@@ -231,7 +315,6 @@ class MainActivity : AppCompatActivity() {
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(viewFinder.surfaceProvider)
             }
-
             imageCapture = ImageCapture.Builder()
                 .setFlashMode(
                     when (flashMode) {
@@ -248,11 +331,16 @@ class MainActivity : AppCompatActivity() {
                     this, cameraSelector, preview, imageCapture
                 )
             } catch (exc: Exception) {
-                Toast.makeText(this, "Failed to start camera: ${exc.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "Failed to start camera: ${exc.message}",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
 
         }, ContextCompat.getMainExecutor(this))
     }
+
 
     private fun startLocationUpdates() {
         if (ActivityCompat.checkSelfPermission(
@@ -262,7 +350,6 @@ class MainActivity : AppCompatActivity() {
         ) {
             return // Handle permission request if needed
         }
-
 
         val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
         val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
@@ -305,30 +392,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-        private fun updateLocationInfo(location: Location) {
+    private fun updateLocationInfo(location: Location) {
         val geocoder = Geocoder(this, Locale.getDefault())
         try {
             val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
             if (addresses?.isNotEmpty() == true) {
                 val address = addresses[0]
-                tvLocationHeader.visibility = View.VISIBLE
-                tvDateTime.visibility = View.VISIBLE
-                tvCoordinates.visibility = View.VISIBLE
-                tvFullAddress.visibility = View.VISIBLE
-                ivMapPreview.visibility = View.VISIBLE
 
-                tvLocationHeader.text = "${address.locality}, ${address.adminArea}, ${address.countryName}"
-                Log.d("Location", "Address: ${address.getAddressLine(0)}")
-                tvDateTime.text = SimpleDateFormat("EEEE, MMMM d, yyyy h:mm a", Locale.getDefault()).format(Date())
-                Log.d("Location", "Date: ${tvDateTime.text}")
-                tvCoordinates.text = "Lat: ${location.latitude}, Long: ${location.longitude}"
-                Log.d("Location", "Coordinates: ${tvCoordinates.text}")
-                tvFullAddress.text = address.getAddressLine(0)
-                Log.d("Location", "Full Address: ${tvFullAddress.text}")
-
-                // For the map preview, you would typically use a mapping service API
-                // Here, we're just setting a placeholder
-                ivMapPreview.setImageResource(R.drawable.map_placeholder)
+                val locationItem = LocationData(
+                    "${address.locality}, ${address.adminArea}, ${address.countryName}",
+                    SimpleDateFormat("EEEE, MMMM d, yyyy h:mm a", Locale.getDefault()).format(Date()),
+                    "Lat: ${location.latitude}, Long: ${location.longitude}",
+                    address.getAddressLine(0),
+                    R.drawable.map_placeholder // Replace with actual map image later
+                )
+                locationData.add(locationItem)
+                locationAdapter.notifyItemInserted(locationData.size - 1) // Notify adapter of new item
             }
         } catch (e: Exception) {
             Toast.makeText(this, "Error getting location details", Toast.LENGTH_SHORT).show()
@@ -362,4 +441,14 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
     }
+
+    // Define LocationData data class within MainActivity
+    data class LocationData(
+        val locationHeader: String,
+        val dateTime: String,
+        val coordinates: String,
+        val fullAddress: String,
+        val mapPreview: Int // Placeholder for now, you'd use a map image later
+    )
+
 }
