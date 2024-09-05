@@ -13,6 +13,10 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.Manifest
+import android.content.ContentValues
+import android.content.Intent
+import android.net.Uri
+import android.provider.MediaStore
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -35,6 +39,7 @@ import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+@Suppress("DEPRECATION")
 class MainActivity : AppCompatActivity() {
     private var imageCapture: ImageCapture? = null
     private lateinit var outputDirectory: File
@@ -55,6 +60,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dateTimeText: TextView
     private lateinit var coordinatesText: TextView
     private lateinit var fullAddressText: TextView
+
+    private lateinit var filePicker: FilePicker
 
     private var flashMode = ImageCapture.FLASH_MODE_OFF
     private var lensFacing = androidx.camera.core.CameraSelector.LENS_FACING_BACK
@@ -88,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         outputDirectory = getOutputDirectory()
         cameraExecutor = Executors.newSingleThreadExecutor()
 
+        filePicker = FilePicker(this)
         captureButton.setOnClickListener { takePhoto() }
         flashButton.setOnClickListener { toggleFlash() }
         switchCameraButton.setOnClickListener { toggleCamera() }
@@ -216,27 +224,6 @@ class MainActivity : AppCompatActivity() {
             canvas.drawLine(width * i / 4, 0f, width * i / 4, height, paint)
             canvas.drawLine(0f, height * i / 4, width, height * i / 4, paint)
         }
-    }
-
-    private fun takePhoto() {
-        val imageCapture = imageCapture ?: return
-
-        val photoFile = File(outputDirectory, "photo_${System.currentTimeMillis()}.jpg")
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-
-        imageCapture.takePicture(
-            outputOptions,
-            ContextCompat.getMainExecutor(this),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    // Handle successful image capture
-                }
-
-                override fun onError(exc: ImageCaptureException) {
-                    // Handle error
-                }
-            }
-        )
     }
 
     private fun toggleFlash() {
@@ -389,46 +376,84 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateLocationUI(currentDateTime: String, location: Location, address: android.location.Address?) {
+    private fun takePhoto() {
+        val imageCapture = imageCapture ?: return
+        filePicker.pickFile { uri ->
+        uri?.let {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, "My Image")
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            }
+            val outputOptions = ImageCapture.OutputFileOptions.Builder(contentResolver, it, contentValues).build()
+
+            imageCapture.takePicture(
+                outputOptions,
+                ContextCompat.getMainExecutor(this),
+                object : ImageCapture.OnImageSavedCallback {
+                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                        val savedUri = output.savedUri ?: uri
+                        // Handle successful image capture
+                        updateGallery(savedUri)
+                    }
+
+                        override fun onError(exc: ImageCaptureException) {
+                            // Handle error
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    private fun updateGallery(uri: Uri) {
+        val intent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
+        intent.data = uri
+        sendBroadcast(intent)
+    }
+
+    private fun updateLocationUI(currentDateTime: String, location: Location?, address: android.location.Address?) {
         val locationName = address?.let {
             listOfNotNull(it.locality, it.adminArea, it.countryName).joinToString(", ")
         } ?: "Current Location"
 
         locationHeader.text = locationName
         dateTimeText.text = "Date/Time: $currentDateTime"
-        coordinatesText.text = "Lat: ${location.latitude}, Long: ${location.longitude}"
+        coordinatesText.text = if (location != null) {
+            "Lat: ${location.latitude}, Long: ${location.longitude}"
+        } else {
+            "Coordinates not available"
+        }
         fullAddressText.text = "Address: ${address?.getAddressLine(0) ?: "[Not available]"}"
     }
 
     private fun updateLocationOverlay() {
-        currentLocation?.let { location ->
-            val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-            val currentDateTime = formatter.format(Date())
+        runOnUiThread {
+            if (currentLocation == null) {
+                updateLocationUI("No data available", null, null)
+            } else {
+                val location = currentLocation!!
+                val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                val currentDateTime = formatter.format(Date())
 
-            // Perform reverse geocoding
-            val geocoder = Geocoder(this, Locale.getDefault())
-            val addresses = try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    geocoder.getFromLocation(location.latitude, location.longitude, 1) { addresses ->
-                        addresses.firstOrNull()?.let { address ->
+                // Perform reverse geocoding
+                val geocoder = Geocoder(this, Locale.getDefault())
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        geocoder.getFromLocation(location.latitude, location.longitude, 1) { addresses ->
+                            val address = addresses.firstOrNull()
                             runOnUiThread {
                                 updateLocationUI(currentDateTime, location, address)
                             }
                         }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                        val address = addresses?.firstOrNull()
+                        updateLocationUI(currentDateTime, location, address)
                     }
-                    null
-                } else {
-                    @Suppress("DEPRECATION")
-                    geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                } catch (e: IOException) {
+                    updateLocationUI("Geocoding error", location, null)
                 }
-            } catch (e: IOException) {
-                // Handle geocoding errors (e.g., network issues)
-                null
-            }
-
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                val address = addresses?.firstOrNull()
-                updateLocationUI(currentDateTime, location, address)
             }
         }
     }
