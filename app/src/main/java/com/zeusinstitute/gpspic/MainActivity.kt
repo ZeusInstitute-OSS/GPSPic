@@ -97,7 +97,24 @@ class MainActivity : AppCompatActivity() {
         setupGridTypeSpinner()
         setupLocationTypeSpinner()
         setupLocationServices()
-        startCamera()
+
+        // Check for camera permission
+        if (hasCameraPermission()) {
+            startCamera()
+        } else {
+            requestCameraPermission()
+        }
+    }
+
+    private fun hasCameraPermission() = ContextCompat.checkSelfPermission(
+        this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    private fun requestCameraPermission() {
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.CAMERA),
+            CAMERA_PERMISSION_REQUEST_CODE
+        )
     }
 
     private fun setupGridTypeSpinner() {
@@ -346,14 +363,28 @@ class MainActivity : AppCompatActivity() {
         locationManager.requestLocationUpdates(locationAccuracy, 10000, 5f, locationListener)
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && (grantResults[0] == PackageManager.PERMISSION_GRANTED || grantResults[1] == PackageManager.PERMISSION_GRANTED)) {
-                startLocationUpdates()
-            } else {
-                // Handle permission denied
-                // You might want to show a message to the user explaining why location is important
+        when (requestCode) {
+            CAMERA_PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    startCamera()
+                } else {
+                    // Handle permission denied
+                    // You might want to show a message to the user explaining why camera permission is necessary
+                }
+            }
+            LOCATION_PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && (grantResults[0] == PackageManager.PERMISSION_GRANTED || grantResults[1] == PackageManager.PERMISSION_GRANTED)) {
+                    startLocationUpdates()
+                } else {
+                    // Handle permission denied
+                    // You might want to show a message to the user explaining why location is important
+                }
             }
         }
     }
@@ -409,6 +440,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val CAMERA_PERMISSION_REQUEST_CODE = 100
         private const val LOCATION_PERMISSION_REQUEST_CODE = 1001
     }
 }
