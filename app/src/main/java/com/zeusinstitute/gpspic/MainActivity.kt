@@ -14,9 +14,11 @@ import android.os.Build
 import android.os.Bundle
 import android.Manifest
 import android.content.ContentValues
+import android.content.ContentValues.TAG
 import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
+import android.util.Log
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -25,6 +27,7 @@ import android.widget.ImageView
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -379,25 +382,32 @@ class MainActivity : AppCompatActivity() {
     private fun takePhoto() {
         val imageCapture = imageCapture ?: return
         filePicker.pickFile { uri ->
-        uri?.let {
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, "My Image")
-                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-            }
-            val outputOptions = ImageCapture.OutputFileOptions.Builder(contentResolver, it, contentValues).build()
+            uri?.let {
+                val metadata = ImageCapture.Metadata().apply {
+                    // Add JPEG quality
+                    isReversedHorizontal = lensFacing == CameraSelector.LENS_FACING_FRONT
+                }
 
-            imageCapture.takePicture(
-                outputOptions,
-                ContextCompat.getMainExecutor(this),
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                        val savedUri = output.savedUri ?: uri
-                        // Handle successful image capture
-                        updateGallery(savedUri)
-                    }
+                val outputOptions = ImageCapture.OutputFileOptions.Builder(contentResolver, it, ContentValues().apply {
+                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/Camera")
+                })
+                    .setMetadata(metadata)
+                    .build()
+
+                imageCapture.takePicture(
+                    outputOptions,
+                    ContextCompat.getMainExecutor(this),
+                    object : ImageCapture.OnImageSavedCallback {
+                        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                            val savedUri = output.savedUri ?: uri
+                            // Handle successful image capture
+                            updateGallery(savedUri)
+                        }
 
                         override fun onError(exc: ImageCaptureException) {
                             // Handle error
+                            Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
                         }
                     }
                 )

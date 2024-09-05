@@ -40,16 +40,16 @@ class FilePicker(private val activity: AppCompatActivity) {
 
     private fun generateFileName(): String {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        return "IMG_$timeStamp.jpg"
+        return "GPSPic_${timeStamp}_ZeusPic.jpg"
     }
 
     private fun generateOutputUri(): Uri {
         val dcimDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
-        val appDirectory = File(dcimDirectory, "GPSPic")
-        if (!appDirectory.exists()) {
-            appDirectory.mkdirs()
+        val cameraDirectory = File(dcimDirectory, "Camera")
+        if (!cameraDirectory.exists()) {
+            cameraDirectory.mkdirs()
         }
-        val file = File(appDirectory, generateFileName())
+        val file = File(cameraDirectory, generateFileName())
         return Uri.fromFile(file)
     }
 }
